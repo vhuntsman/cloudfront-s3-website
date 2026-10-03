@@ -1,0 +1,27 @@
+# aws cloudformation deploy --template-file dns.yaml --stack-name dns --parameter-overrides DomainName=dev.sudocode.sg
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template to create a Route 53 Public Hosted Zone.'
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: 'The fully qualified domain name (e.g., example.com)'
+
+Resources:
+  MyPublicHostedZone:
+    Type: 'AWS::Route53::HostedZone'
+    Properties:
+      Name: !Ref DomainName
+      HostedZoneConfig:
+        Comment: !Sub 'Public hosted zone for ${DomainName}'
+
+Outputs:
+  HostedZoneId:
+    Description: 'The ID of the created public hosted zone'
+    Value: !Ref MyPublicHostedZone
+    Export:
+      Name: !Sub '${AWS::StackName}:HostedZoneId'
+
+  NameServers:
+    Description: 'The name servers assigned to this public hosted zone. Update these at your domain registrar.'
+    Value: !Join [ "\n", !GetAtt MyPublicHostedZone.NameServers ]
