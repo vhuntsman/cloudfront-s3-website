@@ -1,5 +1,13 @@
-# aws cloudformation deploy --template-file cloudfront_s3.yaml --capabilities CAPABILITY_IAM --stack-name cloudfront-s3 --tags AppManagerCFNStackKey=cloudfront-s3
+# aws cloudformation deploy --template-file cloudfront_s3.yaml --capabilities CAPABILITY_IAM --stack-name cloudfront-s3  --parameter-overrides DomainName=cloudfront-s3-demo HostedZoneName=dev.sudocode.sg --tags AppManagerCFNStackKey=cloudfront-s3
 # aws cloudformation delete-stack --stack-name cloudfront-s3
+Parameters:
+  HostedZoneName:
+    Type: String
+    Default: ""
+
+  DomainName:
+    Type: String
+    Default: ""
 
 Resources:
   DemoBucket:
@@ -25,6 +33,19 @@ Resources:
               StringEquals:
                 AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudfrontDistribution}
 
+  SslCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub "${DomainName}.${HostedZoneName}"
+      SubjectAlternativeNames:
+        - !Sub "www.${DomainName}.${HostedZoneName}"
+      ValidationMethod: "DNS"
+      DomainValidationOptions:
+        - DomainName: !Sub "${DomainName}.${HostedZoneName}"
+          HostedZoneId: !ImportValue "dns:HostedZoneId"
+        - DomainName: !Sub "www.${DomainName}.${HostedZoneName}"
+          HostedZoneId: !ImportValue "dns:HostedZoneId"
+
   CloudFrontOAC:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
@@ -42,6 +63,9 @@ Resources:
         DefaultRootObject: index.html
         Enabled: true
         Comment: CloudFront distribution for private S3 bucket
+        Aliases:
+          - !Sub "${DomainName}.${HostedZoneName}"
+          - !Sub "www.${DomainName}.${HostedZoneName}"
 
         Origins:
           - Id: S3Origin
@@ -64,9 +88,41 @@ Resources:
 
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
 
+        ViewerCertificate:
+          AcmCertificateArn: !Ref SslCertificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+
+  ApexDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !ImportValue "dns:HostedZoneId"
+      Name: !Sub "${DomainName}.${HostedZoneName}"
+      Type: A
+      AliasTarget:
+        # The Hosted Zone ID for CloudFront is a fixed global constant (Z2FDTNDATAQYW2)
+        HostedZoneId: Z2FDTNDATAQYW2
+        DNSName: !GetAtt CloudfrontDistribution.DomainName
+        EvaluateTargetHealth: false
+
+  WwwDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !ImportValue "dns:HostedZoneId"
+      Name: !Sub "www.${DomainName}.${HostedZoneName}"
+      Type: A
+      AliasTarget:
+        HostedZoneId: Z2FDTNDATAQYW2
+        DNSName: !GetAtt CloudfrontDistribution.DomainName
+        EvaluateTargetHealth: false
+
 Outputs:
-  HostedZoneId:
+  CloudfrontDistributionUrl:
     Description: 'The URL of the cloudfront distribution'
     Value: !GetAtt CloudfrontDistribution.DomainName
     Export:
       Name: !Sub '${AWS::StackName}:CloudFrontUrl'
+
+  DemoBucketUri:
+    Description: "The full account-regional bucket name"
+    Value: !Sub "s3://${DemoBucket}"
